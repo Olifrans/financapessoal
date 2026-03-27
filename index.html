@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Financeiro PRO</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body {
+    font-family: Arial;
+    background: #0f172a;
+    color: #fff;
+    margin: 0;
+    padding: 20px;
+}
+
+.container { max-width: 1000px; margin: auto; }
+
+.card {
+    background: #1e293b;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+input, select, button {
+    padding: 8px;
+    margin: 5px;
+    border-radius: 6px;
+    border: none;
+}
+
+button {
+    background: #22c55e;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover { background: #16a34a; }
+
+.dashboard {
+    display: flex;
+    gap: 10px;
+}
+
+.box {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    border-radius: 8px;
+}
+
+.income { background: #15803d; }
+.expense { background: #b91c1c; }
+.total { background: #1d4ed8; }
+
+table {
+    width: 100%;
+    margin-top: 10px;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 8px;
+    text-align: center;
+}
+
+th { background: #334155; }
+
+.delete {
+    background: red;
+    cursor: pointer;
+}
+
+canvas {
+    background: white;
+    border-radius: 10px;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>💰 Financeiro PRO</h1>
+
+<div class="card">
+    <input id="desc" placeholder="Descrição">
+    <input type="number" id="value" placeholder="Valor">
+    <input type="date" id="date">
+    
+    <select id="category">
+        <option>Alimentação</option>
+        <option>Transporte</option>
+        <option>Moradia</option>
+        <option>Lazer</option>
+        <option>Outros</option>
+    </select>
+
+    <select id="type">
+        <option value="income">Receita</option>
+        <option value="expense">Despesa</option>
+    </select>
+
+    <button onclick="add()">Adicionar</button>
+</div>
+
+<div class="dashboard">
+    <div class="box income">Receitas: <span id="inc">0</span></div>
+    <div class="box expense">Despesas: <span id="exp">0</span></div>
+    <div class="box total">Total: <span id="tot">0</span></div>
+</div>
+
+<div class="card">
+    <h3>Filtro por Data</h3>
+    <input type="date" id="start">
+    <input type="date" id="end">
+    <button onclick="render()">Filtrar</button>
+</div>
+
+<div class="card">
+    <button onclick="exportCSV()">Exportar Excel</button>
+    <button onclick="exportPDF()">Exportar PDF</button>
+</div>
+
+<div class="card">
+    <canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+<table>
+<thead>
+<tr>
+<th>Desc</th><th>Valor</th><th>Data</th><th>Categoria</th><th>Tipo</th><th>Ação</th>
+</tr>
+</thead>
+<tbody id="list"></tbody>
+</table>
+</div>
+
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem("fin")) || [];
+let chart;
+
+function save() {
+    localStorage.setItem("fin", JSON.stringify(data));
+}
+
+function add() {
+    const obj = {
+        id: Date.now(),
+        desc: desc.value,
+        value: parseFloat(value.value),
+        date: date.value,
+        category: category.value,
+        type: type.value
+    };
+
+    if (!obj.desc || !obj.value || !obj.date) return alert("Preencha tudo");
+
+    data.push(obj);
+    save();
+    render();
+}
+
+function remove(id) {
+    data = data.filter(x => x.id !== id);
+    save();
+    render();
+}
+
+function filterData() {
+    const s = start.value;
+    const e = end.value;
+
+    return data.filter(t => {
+        if (!s || !e) return true;
+        return t.date >= s && t.date <= e;
+    });
+}
+
+function render() {
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+
+    let inc = 0, exp = 0;
+
+    const filtered = filterData();
+
+    let categories = {};
+
+    filtered.forEach(t => {
+        if (t.type === "income") inc += t.value;
+        else exp += t.value;
+
+        if (!categories[t.category]) categories[t.category] = 0;
+        categories[t.category] += t.value;
+
+        list.innerHTML += `
+        <tr>
+            <td>${t.desc}</td>
+            <td>${t.value}</td>
+            <td>${t.date}</td>
+            <td>${t.category}</td>
+            <td>${t.type}</td>
+            <td><button class="delete" onclick="remove(${t.id})">X</button></td>
+        </tr>`;
+    });
+
+    incEl.innerText = inc.toFixed(2);
+    expEl.innerText = exp.toFixed(2);
+    totEl.innerText = (inc - exp).toFixed(2);
+
+    updateChart(categories);
+}
+
+function updateChart(cat) {
+    const ctx = document.getElementById("chart");
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(cat),
+            datasets: [{
+                data: Object.values(cat)
+            }]
+        }
+    });
+}
+
+function exportCSV() {
+    let csv = "Descricao,Valor,Data,Categoria,Tipo\n";
+    data.forEach(t => {
+        csv += `${t.desc},${t.value},${t.date},${t.category},${t.type}\n`;
+    });
+
+    const blob = new Blob([csv]);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "financeiro.csv";
+    a.click();
+}
+
+function exportPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    let y = 10;
+
+    data.forEach(t => {
+        doc.text(`${t.desc} - ${t.value} - ${t.date}`, 10, y);
+        y += 10;
+    });
+
+    doc.save("financeiro.pdf");
+}
+
+const incEl = document.getElementById("inc");
+const expEl = document.getElementById("exp");
+const totEl = document.getElementById("tot");
+
+render();
+</script>
+
+</body>
+</html>
